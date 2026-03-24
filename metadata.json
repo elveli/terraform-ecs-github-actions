@@ -1,0 +1,5 @@
+{
+  "name": "ECS Fargate Spot Deployer",
+  "description": "A GitHub Actions and Terraform project to deploy a Hello World app to AWS ECS Fargate Spot.",
+  "requestFramePermissions": []
+}
