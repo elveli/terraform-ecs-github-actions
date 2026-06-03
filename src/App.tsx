@@ -20,48 +20,64 @@ export default function App() {
       name: 'README.md',
       icon: <FileCode2 className="w-5 h-5 text-gray-600" />,
       description: 'Project documentation and setup instructions.',
-      code: `# ECS Fargate Spot Deployer
+      code: `# AWS ECS Fargate Spot GitHub Actions Deployer
 
-A simple GitHub Actions and Terraform project to deploy a containerized Hello World app to AWS ECS using Fargate Spot instances.
+This repository contains everything you need to deploy a simple "Hello World" Docker container to AWS ECS using Fargate Spot instances, orchestrated by GitHub Actions and Terraform.
 
-## Features
-* **Infrastructure as Code**: Uses Terraform to provision AWS resources.
-* **Cost-Effective**: Deploys to AWS ECS using Fargate Spot capacity providers.
-* **CI/CD Ready**: Includes a GitHub Actions workflow for manual deployment and destruction.
+It uses **OIDC (OpenID Connect)**, which means you do not need to store long-lived AWS IAM secrets in GitHub.
 
-## Prerequisites
-* An AWS Account.
-* An IAM User with permissions to create VPCs, ECS Clusters, IAM Roles, and Security Groups.
+---
 
-## Setup Instructions
+## 🛠️ What Files to Edit Before Deploying
 
-1. **Apply OIDC Locally**
-   Run \`terraform apply\` locally **once** using \`terraform/oidc.tf\` to create the OIDC provider and IAM Role.
-2. **Update Workflow**
-   Copy the outputted Role ARN and paste it into \`AWS_ROLE_ARN\` in your \`deploy.yml\` file.
-3. **Move Workflow File**
-   Move \`github-actions-template/deploy.yml\` to \`.github/workflows/deploy.yml\` in your repository.
+Before you can run the GitHub Action, you need to configure the project for your specific AWS and GitHub environments.
 
-## Usage
+### 1. \`terraform/oidc.tf\` (Run this locally FIRST)
+GitHub Actions needs an IAM Role to assume. You must create this role *once* from your local machine before the pipeline can deploy the rest of the application.
+* **Edit:** Change the \`github_repo\` variable default value to your actual org/repo (e.g., \`timo/my-ecs-repo\`).
+* **Action:** Ensure your AWS CLI is configured locally, then use target applying so you *only* build the OIDC role for now:
+  \`\`\`bash
+  cd terraform
+  terraform init
+  terraform apply -target=aws_iam_role.github_actions -target=aws_iam_openid_connect_provider.github -target=aws_iam_role_policy_attachment.github_actions_admin
+  \`\`\`
+* **Result:** Terraform will output a \`github_actions_role_arn\`. Copy this for the next step.
 
-This project uses a \`workflow_dispatch\` trigger, allowing you to run it manually from the GitHub UI.
+### 2. \`github-actions-template/deploy.yml\` (The Pipeline)
+* **Edit:** Paste the \`github_actions_role_arn\` (from Step 1) into the \`AWS_ROLE_ARN\` environment variable.
+* **Edit (Optional):** Change \`AWS_REGION\` if you don't want to use \`us-east-1\`.
+* **Action:** Move this file into the official GitHub Actions folder path within your repo: \`.github/workflows/deploy.yml\`.
+
+### 3. \`terraform/main.tf\` (Crucial for CI/CD)
+By default, this repository uses *local* state. If GitHub Actions runs twice using local state on ephemeral runners, it will forget what it built the first time and fail.
+* **Edit:** Uncomment the \`backend "s3" { ... }\` block at the top of the file.
+* **Edit:** Replace \`bucket = "my-terraform-state-bucket"\` with the name of an actual, existing S3 bucket in your AWS account. *(Note: You must create this bucket manually in AWS first if you haven't already).*
+
+### 4. \`terraform/variables.tf\` (Infrastructure Config)
+* **Edit (Optional):** Update the \`aws_region\` default to match if you changed it in the pipeline workflow.
+
+---
+
+## 🚀 How to Deploy
+
+Once you have made the edits above, committed, and pushed the code to your GitHub repository:
 
 1. Go to the **Actions** tab in your GitHub repository.
-2. Select the **Deploy ECS App with Terraform** workflow from the left sidebar.
-3. Click the **Run workflow** dropdown.
-4. Select the action you want to perform:
-   * \`apply\`: Provisions or updates the infrastructure.
-   * \`destroy\`: Tears down all provisioned resources.
-5. Click the green **Run workflow** button.
+2. Select the **Deploy ECS App with Terraform** workflow on the left.
+3. Click the **Run workflow** button on the right.
+4. Keep the action set to **\`apply\`** and click the green check button.
+5. GitHub Actions will securely assume your AWS role via OIDC and deploy the VPC, ECS Cluster, and Fargate tasks automatically.
 
-## Resources Created
-* VPC with public subnets
-* ECS Cluster
-* Fargate Spot Capacity Provider strategy
-* Security Group (allowing port 80)
-* IAM Task Execution Role
-* ECS Task Definition (running \`nginxdemos/hello\`)
-* ECS Service`
+---
+
+## 🗑️ How to Tear Down / Destroy
+
+To avoid AWS charges, you can cleanly tear down the infrastructure directly from GitHub Actions:
+
+1. Go to the **Actions** tab > **Deploy ECS App with Terraform**.
+2. Click **Run workflow**.
+3. Change the action dropdown from \`apply\` to **\`destroy\`**.
+4. Click Run. Terraform will securely delete all the AWS resources it created.`
     },
     {
       name: 'github-actions-template/deploy.yml',
