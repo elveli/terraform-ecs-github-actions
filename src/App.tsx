@@ -78,7 +78,56 @@ To avoid AWS charges, you can cleanly tear down the infrastructure directly from
 1. Go to the **Actions** tab > **Deploy ECS App with Terraform**.
 2. Click **Run workflow**.
 3. Change the action dropdown from \`apply\` to **\`destroy\`**.
-4. Click Run. Terraform will securely delete all the AWS resources it created.`
+4. Click Run. Terraform will securely delete all the AWS resources it created.
+
+---
+
+## 🔍 Troubleshooting & Verification
+
+**Important Note:** This project deploys to **AWS ECS (Elastic Container Service)**, which is Amazon's native container orchestration service, **NOT** Kubernetes (EKS). Therefore, tools like \`kubectl\` are not used here. Instead, you use the AWS CLI or the AWS Management Console to inspect your deployments.
+
+Here are the equivalent AWS CLI commands to verify your deployment (similar to common \`kubectl\` commands):
+
+### 1. View Clusters (Like \`kubectl get nodes / namespaces\`)
+Check that your ECS cluster deployed successfully:
+\`\`\`bash
+aws ecs list-clusters
+\`\`\`
+
+### 2. View Services (Like \`kubectl get deployments\`)
+List the services running in your cluster to ensure the \`hello-world-service\` is active:
+\`\`\`bash
+aws ecs list-services --cluster hello-world-cluster
+\`\`\`
+To see detailed status of the service (desired vs. running count):
+\`\`\`bash
+aws ecs describe-services --cluster hello-world-cluster --services hello-world-service
+\`\`\`
+
+### 3. View Tasks (Like \`kubectl get pods\`)
+In ECS, containers run inside "Tasks" (equivalent to Pods). To list running tasks:
+\`\`\`bash
+aws ecs list-tasks --cluster hello-world-cluster
+\`\`\`
+To get the details of a specific task (replace \`<TASK_ID>\` with an ID from the output above):
+\`\`\`bash
+aws ecs describe-tasks --cluster hello-world-cluster --tasks <TASK_ID>
+\`\`\`
+
+### 4. Get the Public App URL (Like \`kubectl get svc\`)
+If your task is running, it will have a public IP address (since we put it in a public subnet for this demo). To find it using the CLI:
+1. Copy the "Network Interface ID" (eni-xxxxxx) from the \`describe-tasks\` output above.
+2. Query EC2 for the public IP attached to that ENI:
+\`\`\`bash
+aws ec2 describe-network-interfaces --network-interface-ids eni-xxxxxxxxxxxxxxxxx --query 'NetworkInterfaces[0].Association.PublicIp' --output text
+\`\`\`
+3. Open \`http://<THAT_IP>\` in your browser!
+
+**(Pro Tip: It is usually much faster to just log into the AWS Console > ECS > Clusters > Tasks > click the Task ID > look for "Public IP" under the Networking tab!).**
+
+### Common Issues
+* **Tasks keep stopping/restarting (Like \`CrashLoopBackOff\`):** This usually means the Docker container is crashing on startup. Check the AWS CloudWatch logs for your ECS Task.
+* **Cannot reach the IP:** Ensure you are accessing over HTTP (port 80), not HTTPS (port 443), as the security group currently only opens port 80.`
     },
     {
       name: 'github-actions-template/deploy.yml',
@@ -233,7 +282,7 @@ provider "aws" {
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.0.0"
-  name = "hello-world-vpc"
+  name = "ecs-fargate-spot-vpc"
   cidr = var.vpc_cidr
   azs             = ["\${var.aws_region}a", "\${var.aws_region}b"]
   public_subnets  = [cidrsubnet(var.vpc_cidr, 8, 1), cidrsubnet(var.vpc_cidr, 8, 2)]
