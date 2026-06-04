@@ -33,6 +33,7 @@ By default, this repository uses *local* state. If GitHub Actions runs twice usi
 
 ### 4. `terraform/variables.tf` (Infrastructure Config)
 * **Edit (Optional):** Update the `aws_region` default to match if you changed it in the pipeline workflow.
+* **Edit (Optional):** Update `vpc_cidr` to your desired VPC IP range if you want to change it from the default `10.42.0.0/16`.
 
 ---
 

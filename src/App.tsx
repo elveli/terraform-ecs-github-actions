@@ -55,6 +55,7 @@ By default, this repository uses *local* state. If GitHub Actions runs twice usi
 
 ### 4. \`terraform/variables.tf\` (Infrastructure Config)
 * **Edit (Optional):** Update the \`aws_region\` default to match if you changed it in the pipeline workflow.
+* **Edit (Optional):** Update \`vpc_cidr\` to your desired VPC IP range if you want to change it from the default \`10.42.0.0/16\`.
 
 ---
 
@@ -197,6 +198,22 @@ output "github_actions_role_arn" {
 }`
     },
     {
+      name: 'terraform/variables.tf',
+      icon: <FileCode2 className="w-5 h-5 text-gray-500" />,
+      description: 'Terraform input variables, including a configurable VPC CIDR block.',
+      code: `variable "aws_region" {
+  description = "AWS region to deploy resources"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "vpc_cidr" {
+  description = "Base CIDR block for the VPC"
+  type        = string
+  default     = "10.42.0.0/16" 
+}`
+    },
+    {
       name: 'terraform/main.tf',
       icon: <FileCode2 className="w-5 h-5 text-blue-600" />,
       description: 'Terraform configuration for VPC, ECS Cluster, Fargate Spot, and Task Definition.',
@@ -217,9 +234,9 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.0.0"
   name = "hello-world-vpc"
-  cidr = "10.0.0.0/16"
+  cidr = var.vpc_cidr
   azs             = ["\${var.aws_region}a", "\${var.aws_region}b"]
-  public_subnets  = ["10.0.1.0/24", "10.0.2.0/24"]
+  public_subnets  = [cidrsubnet(var.vpc_cidr, 8, 1), cidrsubnet(var.vpc_cidr, 8, 2)]
   map_public_ip_on_launch = true
 }
 
