@@ -5,14 +5,6 @@ terraform {
       version = "~> 5.0"
     }
   }
-  
-  # IMPORTANT: For production or continuous use in GitHub Actions, 
-  # uncomment and configure the S3 backend to save your state file remotely.
-  # backend "s3" {
-  #   bucket = "my-terraform-state-bucket"
-  #   key    = "ecs-hello-world/terraform.tfstate"
-  #   region = "us-east-1"
-  # }
 }
 
 provider "aws" {

@@ -13,9 +13,8 @@ on:
           - destroy
 
 env:
-  AWS_REGION: "us-east-1"
-  # Replace with your actual AWS Account ID and Role Name
-  AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/GitHubActionsECSRole"
+  AWS_REGION: "YOUR_REGION_HERE"
+  AWS_ROLE_ARN: "YOUR_ROLE_ARN_HERE"
 
 permissions:
   id-token: write # This is required for requesting the OIDC JWT

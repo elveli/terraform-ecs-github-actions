@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { CheckCircle2, Copy, Terminal, Github, Cloud, FileCode2, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Copy, Terminal, Github, Cloud, FileCode2, Command } from 'lucide-react';
 
 export default function App() {
   const [copied, setCopied] = useState<string | null>(null);
@@ -17,6 +17,42 @@ export default function App() {
 
   const files = [
     {
+      name: 'bootstrap.sh',
+      icon: <Terminal className="w-5 h-5 text-green-600" />,
+      description: 'Run this once locally to fully automate OIDC, S3 state backend setup, and YAML injection.',
+      code: `#!/bin/bash
+set -e
+
+echo "🚀 AWS ECS Fargate & GitHub Actions Auto-Bootstrapper"
+read -p "Enter your GitHub repository (e.g. octocat/my-ecs-app): " GITHUB_REPO
+read -p "Enter AWS Region [us-east-1]: " INPUT_REGION
+AWS_REGION=\${INPUT_REGION:-us-east-1}
+read -p "Enter a globally unique name for your Terraform state S3 bucket: " TF_STATE_BUCKET
+
+cd bootstrap
+terraform init
+terraform apply -var="github_repo=$GITHUB_REPO" -var="aws_region=$AWS_REGION" -var="bucket_name=$TF_STATE_BUCKET" -auto-approve
+
+ROLE_ARN=$(terraform output -raw github_actions_role_arn)
+cd ..
+
+mkdir -p .github/workflows
+sed "s|YOUR_ROLE_ARN_HERE|$ROLE_ARN|g; s|YOUR_REGION_HERE|$AWS_REGION|g" github-actions-template/deploy.yml > .github/workflows/deploy.yml
+
+cat <<EOF > terraform/backend.tf
+terraform {
+  backend "s3" {
+    bucket         = "$TF_STATE_BUCKET"
+    key            = "ecs-hello-world/terraform.tfstate"
+    region         = "$AWS_REGION"
+    dynamodb_table = "terraform-state-locks"
+    encrypt        = true
+  }
+}
+EOF
+echo "✅ Setup Complete!"`
+    },
+    {
       name: 'README.md',
       icon: <FileCode2 className="w-5 h-5 text-gray-600" />,
       description: 'Project documentation and setup instructions.',
@@ -28,40 +64,28 @@ It uses **OIDC (OpenID Connect)**, which means you do not need to store long-liv
 
 ---
 
-## 🛠️ What Files to Edit Before Deploying
+## 🛠️ Quickstart Bootstrapping
 
-Before you can run the GitHub Action, you need to configure the project for your specific AWS and GitHub environments.
+We have fully automated the setup process. You no longer need to manually copy ARNs, move template files, or manually setup your Terraform S3 backend.
 
-### 1. \`terraform/oidc.tf\` (Run this locally FIRST)
-GitHub Actions needs an IAM Role to assume. You must create this role *once* from your local machine before the pipeline can deploy the rest of the application.
-* **Edit:** Change the \`github_repo\` variable default value to your actual org/repo (e.g., \`timo/my-ecs-repo\`).
-* **Action:** Ensure your AWS CLI is configured locally, then use target applying so you *only* build the OIDC role for now:
-  \`\`\`bash
-  cd terraform
-  terraform init
-  terraform apply -target=aws_iam_role.github_actions -target=aws_iam_openid_connect_provider.github -target=aws_iam_role_policy_attachment.github_actions_admin
-  \`\`\`
-* **Result:** Terraform will output a \`github_actions_role_arn\`. Copy this for the next step.
+To configure OIDC, your Remote Backend, and your workflows all at once, open your terminal at the root of this project and run:
 
-### 2. \`github-actions-template/deploy.yml\` (The Pipeline)
-* **Edit:** Paste the \`github_actions_role_arn\` (from Step 1) into the \`AWS_ROLE_ARN\` environment variable.
-* **Edit (Optional):** Change \`AWS_REGION\` if you don't want to use \`us-east-1\`.
-* **Action:** Move this file into the official GitHub Actions folder path within your repo: \`.github/workflows/deploy.yml\`.
+\`\`\`bash
+bash bootstrap.sh
+\`\`\`
 
-### 3. \`terraform/main.tf\` (Crucial for CI/CD)
-By default, this repository uses *local* state. If GitHub Actions runs twice using local state on ephemeral runners, it will forget what it built the first time and fail.
-* **Edit:** Uncomment the \`backend "s3" { ... }\` block at the top of the file.
-* **Edit:** Replace \`bucket = "my-terraform-state-bucket"\` with the name of an actual, existing S3 bucket in your AWS account. *(Note: You must create this bucket manually in AWS first if you haven't already).*
+**The script will prompt you for:**
+1. Your GitHub respository name (e.g., \`octocat/my-ecs-demo\`).
+2. Your desired AWS region.
+3. A name for a new S3 bucket to securely store your Terraform state.
 
-### 4. \`terraform/variables.tf\` (Infrastructure Config)
-* **Edit (Optional):** Update the \`aws_region\` default to match if you changed it in the pipeline workflow.
-* **Edit (Optional):** Update \`vpc_cidr\` to your desired VPC IP range if you want to change it from the default \`10.42.0.0/16\`.
+The script then provisions the AWS OIDC identity, creates the state bucket with DynamoDB locking, configures your GitHub Actions YAML file, and generates \`terraform/backend.tf\`. 
 
 ---
 
 ## 🚀 How to Deploy
 
-Once you have made the edits above, committed, and pushed the code to your GitHub repository:
+Once you have run the \`bootstrap.sh\` script, committed, and pushed the code to your GitHub repository:
 
 1. Go to the **Actions** tab in your GitHub repository.
 2. Select the **Deploy ECS App with Terraform** workflow on the left.
@@ -132,7 +156,7 @@ aws ec2 describe-network-interfaces --network-interface-ids eni-xxxxxxxxxxxxxxxx
     {
       name: 'github-actions-template/deploy.yml',
       icon: <Github className="w-5 h-5 text-gray-700" />,
-      description: 'GitHub Actions workflow. (Move this to .github/workflows/ after exporting)',
+      description: 'GitHub Actions workflow template. The bootstrap script automatically configures this.',
       code: `name: Deploy ECS App with Terraform
 
 on:
@@ -148,9 +172,8 @@ on:
           - destroy
 
 env:
-  AWS_REGION: "us-east-1"
-  # Replace with your actual AWS Account ID and Role Name
-  AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/GitHubActionsECSRole"
+  AWS_REGION: "YOUR_REGION_HERE"
+  AWS_ROLE_ARN: "YOUR_ROLE_ARN_HERE"
 
 permissions:
   id-token: write # This is required for requesting the OIDC JWT
@@ -193,17 +216,26 @@ jobs:
       run: terraform destroy -auto-approve`
     },
     {
-      name: 'terraform/oidc.tf',
+      name: 'bootstrap/main.tf',
       icon: <FileCode2 className="w-5 h-5 text-purple-600" />,
-      description: 'Terraform configuration to set up the AWS OIDC Provider and IAM Role.',
-      code: `# This file sets up the OIDC Provider and IAM Role for GitHub Actions.
-# NOTE: You must apply this locally ONCE using your personal AWS credentials 
-# before GitHub Actions can use the OIDC role to deploy the rest of the infrastructure.
+      description: 'Terraform configuration to set up OIDC, S3 State Bucket, and DynamoDB locking.',
+      code: `variable "github_repo" { type = string }
+variable "aws_region" { type = string default = "us-east-1" }
+variable "bucket_name" { type = string }
 
-variable "github_repo" {
-  description = "GitHub repository in the format org/repo (e.g., my-org/my-repo)"
-  type        = string
-  default     = "YOUR_GITHUB_USERNAME/YOUR_REPO_NAME"
+provider "aws" { region = var.aws_region }
+
+resource "aws_s3_bucket" "terraform_state" { bucket = var.bucket_name }
+resource "aws_s3_bucket_versioning" "enabled" { 
+  bucket = aws_s3_bucket.terraform_state.id
+  versioning_configuration { status = "Enabled" }
+}
+
+resource "aws_dynamodb_table" "terraform_locks" {
+  name         = "terraform-state-locks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+  attribute { name = "LockID" type = "S" }
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -214,26 +246,9 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 resource "aws_iam_role" "github_actions" {
   name = "GitHubActionsECSRole"
-
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.github.arn
-        }
-        Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:\${var.github_repo}:*"
-          }
-        }
-      }
-    ]
+    Statement = [{ Action = "sts:AssumeRoleWithWebIdentity", Effect = "Allow", Principal = { Federated = aws_iam_openid_connect_provider.github.arn }, Condition = { StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }, StringLike = { "token.actions.githubusercontent.com:sub" = "repo:\${var.github_repo}:*" } } }]
   })
 }
 
@@ -242,9 +257,7 @@ resource "aws_iam_role_policy_attachment" "github_actions_admin" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-output "github_actions_role_arn" {
-  value = aws_iam_role.github_actions.arn
-}`
+output "github_actions_role_arn" { value = aws_iam_role.github_actions.arn }`
     },
     {
       name: 'terraform/variables.tf',
@@ -265,7 +278,7 @@ variable "vpc_cidr" {
     {
       name: 'terraform/main.tf',
       icon: <FileCode2 className="w-5 h-5 text-blue-600" />,
-      description: 'Terraform configuration for VPC, ECS Cluster, Fargate Spot, and Task Definition.',
+      description: 'Main Terraform configuration covering networking, IAM execution role, and Fargate ECS layout.',
       code: `terraform {
   required_providers {
     aws = {
@@ -378,38 +391,31 @@ resource "aws_ecs_service" "hello_world" {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">ECS Fargate Spot Deployer</h1>
-              <p className="text-gray-500">Your GitHub Actions & Terraform setup is ready.</p>
+              <p className="text-gray-500">Fully Automated AWS Bootstrapping & GitHub Actions Setup.</p>
             </div>
           </div>
           
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
               <div className="flex items-center gap-2 font-semibold mb-2">
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-sm">1</span>
                 Export
               </div>
-              <p className="text-sm text-gray-600">Export this project to GitHub. It should work now!</p>
+              <p className="text-sm text-gray-600">Export this project to GitHub. The template is ready to go!</p>
             </div>
             <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
               <div className="flex items-center gap-2 font-semibold mb-2">
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-sm">2</span>
-                Move Workflow
+                Run Bootstrap Script
               </div>
-              <p className="text-sm text-gray-600">In your repo, move <code>github-actions-template/deploy.yml</code> to <code>.github/workflows/deploy.yml</code>.</p>
+              <p className="text-sm text-gray-600">Open your terminal in the repo folder and run <code>bash bootstrap.sh</code>. It does everything for you.</p>
             </div>
             <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
               <div className="flex items-center gap-2 font-semibold mb-2">
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-sm">3</span>
-                Apply OIDC
+                Push & Run Actions
               </div>
-              <p className="text-sm text-gray-600">Run <code>terraform apply</code> locally on <code>oidc.tf</code> to create the IAM Role.</p>
-            </div>
-            <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
-              <div className="flex items-center gap-2 font-semibold mb-2">
-                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-sm">4</span>
-                Run Action
-              </div>
-              <p className="text-sm text-gray-600">Update <code>AWS_ROLE_ARN</code> in the workflow, push, and run it from the Actions tab.</p>
+              <p className="text-sm text-gray-600">Commit the script changes to GitHub. Go to Actions tab and click "Run workflow"!</p>
             </div>
           </div>
         </div>
@@ -417,7 +423,7 @@ resource "aws_ecs_service" "hello_world" {
         {/* Files */}
         <div className="space-y-6">
           <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Terminal className="w-5 h-5" /> Generated Files
+            <Command className="w-5 h-5" /> Generated Code
           </h2>
           
           {files.map((file, idx) => (
@@ -447,11 +453,11 @@ resource "aws_ecs_service" "hello_world" {
           ))}
         </div>
 
-        {/* Important Note */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-800">
-          <h4 className="font-semibold mb-2">Important Note on Terraform State</h4>
+        {/* Note */}
+        <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-green-800">
+          <h4 className="font-semibold mb-2 flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Ready for Production</h4>
           <p className="text-sm">
-            This simple example uses local state. If you run this in GitHub Actions multiple times, the state is lost between runs. For a production setup, you should uncomment the <code>backend "s3"</code> block in <code>main.tf</code> and configure an AWS S3 bucket and DynamoDB table to store your Terraform state remotely.
+            This workspace now generates the full AWS native CI/CD workflow, utilizing secure passwordless OIDC, and configures a remote S3 state backend. Run <code>bash bootstrap.sh</code> to configure it to your specific AWS account in seconds.
           </p>
         </div>
 
